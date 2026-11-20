@@ -282,8 +282,8 @@ main.enter{animation:enter .22s ease-out}
   .pp{break-after:page;color:#000;font-family:'Sarabun',Tahoma,sans-serif;font-size:9.5pt;line-height:1.25;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .pp:last-child{break-after:auto}
   /* separate borders (right+bottom per cell, top+left on the table) survive print scaling; collapsed hairlines can drop out */
-  .pp table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;border-top:1.5px solid #000;border-left:1.5px solid #000;background:#fff}
-  .pp th,.pp td{border:0!important;border-right:1.5px solid #000!important;border-bottom:1.5px solid #000!important;padding:1px 3px;font-weight:400;text-align:center;overflow:hidden;background:#fff!important;color:#000!important;white-space:normal!important;vertical-align:middle!important}
+  .pp table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;border-top:2px solid #000;border-left:2px solid #000;background:#fff}
+  .pp th,.pp td{border:0!important;border-right:2px solid #000!important;border-bottom:2px solid #000!important;padding:1px 3px;font-weight:400;text-align:center;overflow:hidden;background:#fff!important;color:#000!important;white-space:normal!important;vertical-align:middle!important}
   .ph{margin-bottom:3mm}.ph th{font-size:9pt;height:6mm}.ph td{height:5.4mm;font-size:8.5pt}
   .ph td.l{text-align:left;white-space:nowrap!important;text-overflow:ellipsis}.ph td.r{text-align:right}
   .ph td.blank{border-right:0!important;border-bottom:0!important}
@@ -294,7 +294,7 @@ main.enter{animation:enter .22s ease-out}
   .ph .info .dn{text-align:center;font-size:9pt;font-style:italic}
   .ph .info dl{display:grid;grid-template-columns:auto 1fr;gap:0 6px;margin:2mm 0 0}.ph .info dt{font-weight:700}.ph .info dd{margin:0}
   .pg th{font-size:8pt;height:6.5mm}.pg th.lbl{width:7%;text-align:center}.pg .nar{width:3.6%}
-  .pg td{height:19mm;font-size:7.8pt;line-height:1.15}
+  .pg td{height:16mm;font-size:7.8pt;line-height:1.15}
   .pg td.c b{display:block;font-size:8.3pt}.pg td.c span{display:block;max-height:2.4em;overflow:hidden}.pg td.c small{display:block;font-size:7.2pt}
   .pg td.lk{background:#eee!important}
   .pg td.vt span{display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);font-size:9pt;letter-spacing:.5px;white-space:nowrap}
