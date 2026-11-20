@@ -63,20 +63,13 @@ const EXECS = [
 
 // Idempotent: also runs on databases seeded before executives existed.
 async function ensureExecutives() {
-  await prisma.department.upsert({ where: { code: 'EXE' }, update: {}, create: { code: 'EXE', nameTh: 'ผู้บริหาร', nameEn: 'Executives' } });
+  await prisma.department.createMany({ skipDuplicates: true, data: [{ code: 'EXE', nameTh: 'ผู้บริหาร', nameEn: 'Executives' }] });
   const pw = process.env.INITIAL_PASSWORD, hash = pw && pw.length >= 8 ? await bcrypt.hash(pw, 10) : null;
-  let added = 0;
-  for (const [id, emp, name, pos, exp, edu, phone] of EXECS) {
-    if (!await prisma.personnel.findUnique({ where: { empCode: emp } })) {
-      await prisma.personnel.create({ data: { id, empCode: emp, fullName: name, position: pos, departmentCode: 'EXE', expertise: exp, education: edu, phone, isPublicProfile: true, maxHoursPerWeek: 0 } });
-      added++;
-    }
-    const p = await prisma.personnel.findUnique({ where: { empCode: emp } });
-    if (!await prisma.user.findUnique({ where: { username: emp } })) {
-      if (hash) await prisma.user.create({ data: { username: emp, passwordHash: hash, role: 'EXEC', personnelId: p.id } });
-      else console.warn(`seed: INITIAL_PASSWORD not set, no login created for ${emp}`);
-    }
-  }
+  // skipDuplicates: two deployments building at once must not fail on the same rows
+  const added = (await prisma.personnel.createMany({ skipDuplicates: true, data: EXECS.map(([id, emp, name, pos, exp, edu, phone]) => ({ id, empCode: emp, fullName: name, position: pos, departmentCode: 'EXE', expertise: exp, education: edu, phone, isPublicProfile: true, maxHoursPerWeek: 0 })) })).count;
+  const ps = await prisma.personnel.findMany({ where: { empCode: { in: EXECS.map(x => x[1]) } } });
+  if (hash) await prisma.user.createMany({ skipDuplicates: true, data: ps.map(p => ({ username: p.empCode, passwordHash: hash, role: 'EXEC', personnelId: p.id })) });
+  else console.warn('seed: INITIAL_PASSWORD not set, executive logins not created');
   if (added) console.log(`seed: added ${added} executives`);
 }
 
