@@ -36,6 +36,7 @@ Next.js 14 (App Router) + Prisma + TiDB Cloud ติดตั้งบน Vercel
    | `DATABASE_URL` | ค่าจาก TiDB ข้อ 1.6 |
    | `AUTH_SECRET` | สุ่มตัวอักษรอย่างน้อย 32 ตัว เช่นจาก <https://generate-secret.vercel.app/32> |
    | `INITIAL_PASSWORD` | รหัสผ่านเริ่มต้นของทุกบัญชี (8 ตัวขึ้นไป) |
+   | `ANTHROPIC_API_KEY` | (ไม่บังคับ) คีย์ Claude API สำหรับหน้า AI ถาม-ตอบ จาก <https://console.anthropic.com> ถ้าไม่ใส่ หน้า AI จะตอบด้วยกฎในเครื่องอย่างเดียว |
 
 4. กด **Deploy** ระบบจะสร้างตาราง ใส่ข้อมูลตัวอย่าง และ build ให้เอง (ประมาณ 2 นาที)
 
@@ -60,7 +61,6 @@ npm test               # ทดสอบตัวตรวจเงื่อน�
 
 ## สิ่งที่ยังไม่ได้ทำ (เฟสถัดไปตามสเปก)
 - แยกตัวจัดตารางไป Worker (ตอนนี้รันใน API route ใช้เวลาไม่ถึง 1 วินาทีกับข้อมูลตัวอย่าง) และขั้น GA
-- AI ถาม-ตอบด้วย Google Gemini + TiDB Vector (ตอนนี้ตอบด้วยกฎในหน้าเว็บ)
 - Export PDF/Excel, แจ้งเตือนทางอีเมลและ LINE OA (ตอนนี้บันทึกแจ้งเตือนในระบบ)
 - Backup อัตโนมัติ, 2FA สำหรับแอดมิน, หน้ารีเซ็ตรหัสผ่านครู
 - การ migrate ใช้ `prisma db push`; เมื่อมีข้อมูลจริงควรเปลี่ยนเป็น `prisma migrate deploy`
