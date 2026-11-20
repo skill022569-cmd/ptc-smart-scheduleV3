@@ -126,6 +126,23 @@ const H = {
     await audit(me.name, 'SPLIT_SLOT', `${label(core, s)} [${a},${c}]`);
     return { ok: true, newId: ns.id };
   },
+  // Join two parts of the same teaching assignment back into one block, at either part's position.
+  async merge(b, me) {
+    const { D, core, v } = await ctx(b.vid), s = slotIn(v, b.sid), x = slotIn(v, b.xid);
+    mayEdit(me, D, v, s); mayEdit(me, D, v, x);
+    if (s.id === x.id || s.aid !== x.aid) throw new HttpError(400, 'รวมได้เฉพาะคาบของวิชาและกลุ่มเรียนเดียวกัน');
+    const at = b.at === 'other' ? x : s, len = s.len + x.len, room = str(b.room, 16) || s.room;
+    const r = core.check(core.idx(v.slots, s.id, x.id), D.A[s.aid], at.day, at.start, len, room);
+    if (r.status === 'red' || r.status === 'none') throw new HttpError(409, 'รวมคาบไม่ได้: ' + r.hard.join('; '));
+    Object.assign(s, { day: at.day, start: at.start, len, room, split: Math.min(s.split, x.split) });
+    v.slots = v.slots.filter(o => o.id !== x.id);
+    await tx(async t => {
+      await t.slotOccupancy.deleteMany({ where: { slotId: x.id } });
+      await t.scheduleSlot.delete({ where: { id: x.id } });
+      await saveSlots(t, D, v.id, [s]); await refit(t, core, v);
+    });
+    await audit(me.name, 'MERGE_SLOT', `${label(core, s)}: ${where(s)}`);
+  },
   async pin(b, me) {
     const { D, core, v } = await ctx(b.vid), s = slotIn(v, b.sid);
     if (v.status !== 'DRAFT') throw new HttpError(403, 'แก้ได้เฉพาะฉบับร่าง');
@@ -141,7 +158,15 @@ const H = {
     const slots = b.slots.map(s => ({ id: str(s.id, 40), aid: str(s.aid, 40), day: int(s.day), start: int(s.start), len: int(s.len), room: str(s.room, 16), locked: !!s.locked, split: int(s.split) }));
     const sum = list => { const o = {}; list.forEach(s => o[s.aid] = (o[s.aid] || 0) + s.len); return JSON.stringify(Object.entries(o).sort()) };
     if (sum(slots) !== sum(v.slots)) throw new HttpError(400, 'จำนวนคาบไม่ตรงกับฉบับปัจจุบัน');
-    const err = core.validateSlots(slots); if (err) throw new HttpError(409, 'ย้อนกลับไม่ได้: ' + err);
+    // Re-check only slots that differ from now, so drafts made under older rules can still be undone.
+    if (slots.some(s => !D.A[s.aid])) throw new HttpError(400, 'มีรายการสอนที่ไม่รู้จัก');
+    if (core.conflicts(slots)) throw new HttpError(409, 'ย้อนกลับไม่ได้: ตารางจะมีคาบชนกัน');
+    const now = new Map(v.slots.map(s => [s.id, s]));
+    for (const s of slots) {
+      const c = now.get(s.id); if (c && c.day === s.day && c.start === s.start && c.len === s.len && c.room === s.room) continue;
+      const r = core.check(core.idx(slots, s.id), D.A[s.aid], s.day, s.start, s.len, s.room);
+      if (r.status === 'red' || r.status === 'none') throw new HttpError(409, 'ย้อนกลับไม่ได้: ' + r.hard[0]);
+    }
     if (me.role === 'TEACHER') {
       const cur = new Map(v.slots.map(s => [s.id, s]));
       const touched = [...slots.filter(s => { const c = cur.get(s.id); return !c || c.day !== s.day || c.start !== s.start || c.len !== s.len || c.room !== s.room }), ...v.slots.filter(c => !slots.some(s => s.id === c.id))];

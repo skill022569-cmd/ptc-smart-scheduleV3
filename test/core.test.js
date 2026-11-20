@@ -30,3 +30,17 @@ test('checker flags teacher clash, lock, unavailability, wrong room type; soft-f
   assert.equal(c.check(m, D.A.a2, 4, 8, 2, 'R1').status, 'yellow');
   assert.equal(c.check(m, D.A.a2, 4, 9, 2, 'R1').status, 'none');
 });
+
+test('no block may run through lunch; solver halves a block that cannot fit whole', () => {
+  const c = makeCore(D), m = c.idx([]);
+  assert.equal(c.check(m, D.A.a2, 3, 4, 2, 'R1').status, 'red');
+  assert.equal(c.check(m, D.A.a2, 3, 3, 2, 'R1').status, 'green');
+  // 4-period practical, but every morning except Monday's (homeroom) is blocked for the teacher.
+  const T = { ...D.TCH.t1, unav: [2, 3, 4, 5].flatMap(d => [1, 2, 3, 4].map(p => ({ day: d, p, reason: 'x' }))) };
+  const D2 = { ...D, TCH: { t1: T }, ASG: [{ id: 'p', subj: 'S1', teachers: ['t1'], groups: ['G1'], pattern: [4], periods: 4 }] }; D2.A = { p: D2.ASG[0] };
+  const r = makeCore(D2).solve(3, [], id);
+  assert.equal(r.unplaced.length, 0);
+  assert.deepEqual(r.slots.map(s => s.len).sort(), [2, 2]);
+  assert.ok(r.slots.every(s => !(s.start <= 4 && s.start + s.len - 1 >= 5)));
+  assert.equal(new Set(r.slots.map(s => s.split)).size, 2);
+});
