@@ -44,3 +44,19 @@ test('no block may run through lunch; solver halves a block that cannot fit whol
   assert.ok(r.slots.every(s => !(s.start <= 4 && s.start + s.len - 1 >= 5)));
   assert.equal(new Set(r.slots.map(s => s.split)).size, 2);
 });
+
+test('swap plans re-pick a room when the old one is taken at the new time', () => {
+  const R = { ...D.RM, R2: { id: 'R2', name: 'R2', bld: 'A', cap: 40, type: 'CLASS', unav: [] } };
+  const G2 = { id: 'G2', level: 'ปวส.', year: 1, size: 30, name: 'ปวส.1', en: 'G2' };
+  const ASG = [...D.ASG, { id: 'a3', subj: 'S2', teachers: ['t2'], groups: ['G2'], pattern: [2], periods: 2 }];
+  const D3 = { ...D, RM: R, GRP: { ...D.GRP, G2 }, TCH: { ...D.TCH, t2: { id: 't2', short: 'ครูบี', max: 20, maxDay: 6, maxConsec: 4, unav: [] } }, ASG, A: Object.fromEntries(ASG.map(a => [a.id, a])) };
+  const c = makeCore(D3);
+  const s = { id: 's', aid: 'a1', day: 3, start: 2, len: 2, room: 'R1', split: 0 }, x = { id: 'x', aid: 'a2', day: 4, start: 2, len: 2, room: 'R2', split: 0 };
+  const other = { id: 'o', aid: 'a3', day: 4, start: 2, len: 2, room: 'R1', split: 0 }; // R1 busy on day 4 when s would move there
+  const p = c.planSwap([s, x, other], s, x);
+  assert.equal(p.ok, true);
+  assert.notEqual(p.rooms[0], 'R1'); // R1 is taken on day 4
+  const after = [{ ...s, day: 4, start: 2, room: p.rooms[0] }, { ...x, day: 3, start: 2, room: p.rooms[1] }, other];
+  assert.equal(c.conflicts(after), 0);
+  assert.equal(c.planSwap([s, { ...x, aid: 'a1' }], s, { ...x, aid: 'a1', start: 3, day: 3 }).ok, false); // same group overlapping itself
+});

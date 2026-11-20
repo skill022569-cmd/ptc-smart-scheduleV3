@@ -120,14 +120,14 @@ const H = {
     await tx(async t => { await saveSlots(t, D, v.id, [s]); await refit(t, core, v) });
     await audit(me.name, 'MOVE_SLOT', `${label(core, s)}: ${from} → ${where(s)} ${room}`);
   },
+  // Swap two blocks' places (any subjects, any lengths) when both fit and nothing clashes afterwards.
   async swap(b, me) {
     const { D, core, v } = await ctx(b.vid), s = slotIn(v, b.sid), x = slotIn(v, b.xid);
     mayEdit(me, D, v, s); mayEdit(me, D, v, x);
-    if (s.len !== x.len || !D.A[x.aid].teachers.some(t => D.A[s.aid].teachers.includes(t))) throw new HttpError(400, 'สลับได้เฉพาะคาบของครูคนเดียวกันที่ยาวเท่ากัน');
-    const m = core.idx(v.slots, s.id, x.id);
-    const r1 = core.check(m, D.A[s.aid], x.day, x.start, s.len, s.room), r2 = core.check(m, D.A[x.aid], s.day, s.start, x.len, x.room);
-    if (r1.status === 'red' || r2.status === 'red') throw new HttpError(409, 'สลับไม่ได้: ' + [...r1.hard, ...r2.hard].join('; '));
-    [s.day, s.start, x.day, x.start] = [x.day, x.start, s.day, s.start];
+    if (s.id === x.id) throw new HttpError(400, 'เลือกคาบอื่นเพื่อสลับ');
+    const plan = core.planSwap(v.slots, s, x);
+    if (!plan.ok) throw new HttpError(409, 'สลับไม่ได้: ' + plan.why);
+    [s.day, s.start, s.room, x.day, x.start, x.room] = [x.day, x.start, plan.rooms[0], s.day, s.start, plan.rooms[1]];
     await tx(async t => { await saveSlots(t, D, v.id, [s, x]); await refit(t, core, v) });
     await audit(me.name, 'SWAP_SLOT', `${label(core, s)} ⇄ ${label(core, x)}`);
   },
