@@ -4,12 +4,12 @@ import {
   prisma, getSession, loadMaster, coreFor, loadVersion, loadVersions, saveSlots, createVersion, replaceSlots,
   audit, rateLimit, json, fail, HttpError,
 } from '../../../lib/server.js';
-import { importSpec, validateImport, pp, thDay } from '../../../lib/core.js';
+import { importSpec, validateImport, pp, thDay, crossesLunch } from '../../../lib/core.js';
 
 export const maxDuration = 60;
 
 const PUBLIC = new Set(['issueCreate', 'dsrCreate', 'consent']);
-const ADMIN_ONLY = new Set(['setPassword', 'pin', 'clone', 'publish', 'runScheduler', 'crDecide', 'issueMove', 'dsrDone', 'lockToggle', 'import']);
+const ADMIN_ONLY = new Set(['resize', 'deleteVersion', 'setPassword', 'pin', 'clone', 'publish', 'runScheduler', 'crDecide', 'issueMove', 'dsrDone', 'lockToggle', 'import']);
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const int = v => { const n = Number(v); if (!Number.isInteger(n)) throw new HttpError(400, 'ข้อมูลไม่ถูกต้อง'); return n };
 
@@ -61,6 +61,22 @@ const H0 = {
     await audit(me.name, 'PASSWORD_RESET', `${u.username}${b.force ? ' (ต้องเปลี่ยนเมื่อเข้าครั้งถัดไป)' : ''}`);
   },
 };
+const MAX_DRAFTS = 5, KEEP_ARCHIVED = 2;
+async function dropVersion(t, vid, why) {
+  await t.changeRequest.updateMany({ where: { versionId: vid, status: 'PENDING' }, data: { status: 'REJECTED', error: why } });
+  await t.slotOccupancy.deleteMany({ where: { versionId: vid } });
+  await t.scheduleSlot.deleteMany({ where: { versionId: vid } });
+  await t.scheduleVersion.delete({ where: { id: vid } });
+}
+async function roomForDraft(termId) {
+  const n = await prisma.scheduleVersion.count({ where: { termId, status: 'DRAFT' } });
+  if (n >= MAX_DRAFTS) throw new HttpError(409, `มีฉบับร่างครบ ${MAX_DRAFTS} ฉบับแล้ว กรุณาลบฉบับร่างที่ไม่ใช้ในหน้าเวอร์ชันก่อน`);
+}
+// The assignment (input for future scheduler runs) follows the block lengths edited in this draft.
+async function syncAssignment(t, v, aid) {
+  const parts = v.slots.filter(o => o.aid === aid).sort((x, y) => x.split - y.split).map(o => o.len);
+  await t.teachingAssignment.update({ where: { id: aid }, data: { requiredPeriods: parts.reduce((n, l) => n + l, 0), blockPattern: parts } });
+}
 const PHOTO = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const H = {
   ...H0,
@@ -115,16 +131,35 @@ const H = {
     await tx(async t => { await saveSlots(t, D, v.id, [s, x]); await refit(t, core, v) });
     await audit(me.name, 'SWAP_SLOT', `${label(core, s)} ⇄ ${label(core, x)}`);
   },
-  async split(b, me) {
+  // +1 / -1 period on a block (admin): the subject's weekly periods and block pattern follow the draft.
+  async resize(b, me) {
     const { D, core, v } = await ctx(b.vid), s = slotIn(v, b.sid);
     mayEdit(me, D, v, s);
-    const a = int(b.a), c = int(b.b);
-    if (a < 1 || c < 1 || a + c !== s.len) throw new HttpError(400, 'ผลรวมคาบต้องเท่าเดิม');
-    const ns = { ...s, id: randomUUID(), start: s.start + a, len: c, locked: false, split: Math.max(...v.slots.filter(o => o.aid === s.aid).map(o => o.split)) + 1 };
-    s.len = a; v.slots.push(ns);
-    await tx(async t => { await saveSlots(t, D, v.id, [s], [ns]); await refit(t, core, v) });
-    await audit(me.name, 'SPLIT_SLOT', `${label(core, s)} [${a},${c}]`);
-    return { ok: true, newId: ns.id };
+    const delta = int(b.delta), parts = v.slots.filter(o => o.aid === s.aid);
+    if (delta !== 1 && delta !== -1) throw new HttpError(400, 'ข้อมูลไม่ถูกต้อง');
+    let removed = null;
+    if (delta === 1) {
+      const start = b.at === 'start' ? s.start - 1 : s.start;
+      const r = core.check(core.idx(v.slots, s.id), D.A[s.aid], s.day, start, s.len + 1, s.room);
+      if (r.status === 'red' || r.status === 'none') throw new HttpError(409, 'เพิ่มคาบไม่ได้: ' + r.hard.join('; '));
+      Object.assign(s, { start, len: s.len + 1 });
+    } else if (s.len > 1) s.len -= 1;
+    else if (parts.length > 1) removed = s;
+    else throw new HttpError(400, 'วิชานี้เหลือ 1 คาบแล้ว ลดอีกไม่ได้');
+    if (removed) v.slots = v.slots.filter(o => o.id !== s.id);
+    await tx(async t => {
+      if (removed) { await t.slotOccupancy.deleteMany({ where: { slotId: s.id } }); await t.scheduleSlot.delete({ where: { id: s.id } }) }
+      else await saveSlots(t, D, v.id, [s]);
+      await syncAssignment(t, v, s.aid); await refit(t, core, v);
+    });
+    const total = v.slots.filter(o => o.aid === s.aid).reduce((n, o) => n + o.len, 0);
+    await audit(me.name, delta > 0 ? 'ADD_PERIOD' : 'REMOVE_PERIOD', `${label(core, s)}: รวม ${total} คาบ/สัปดาห์`);
+  },
+  async deleteVersion(b, me) {
+    const { v } = await ctx(b.vid);
+    if (v.status === 'PUBLISHED') throw new HttpError(400, 'ลบฉบับที่เผยแพร่อยู่ไม่ได้ ให้เผยแพร่ฉบับอื่นก่อน');
+    await tx(t => dropVersion(t, v.id, 'ฉบับตารางถูกลบ'));
+    await audit(me.name, 'DELETE_VERSION', v.name);
   },
   // Join two parts of the same teaching assignment back into one block, at either part's position.
   async merge(b, me) {
@@ -157,7 +192,8 @@ const H = {
     if (!Array.isArray(b.slots) || b.slots.length > 2000) throw new HttpError(400, 'ข้อมูลไม่ถูกต้อง');
     const slots = b.slots.map(s => ({ id: str(s.id, 40), aid: str(s.aid, 40), day: int(s.day), start: int(s.start), len: int(s.len), room: str(s.room, 16), locked: !!s.locked, split: int(s.split) }));
     const sum = list => { const o = {}; list.forEach(s => o[s.aid] = (o[s.aid] || 0) + s.len); return JSON.stringify(Object.entries(o).sort()) };
-    if (sum(slots) !== sum(v.slots)) throw new HttpError(400, 'จำนวนคาบไม่ตรงกับฉบับปัจจุบัน');
+    // Teachers may only move periods; admins may also undo a +/- period change.
+    if (me.role !== 'ADMIN' && sum(slots) !== sum(v.slots)) throw new HttpError(400, 'จำนวนคาบไม่ตรงกับฉบับปัจจุบัน');
     // Re-check only slots that differ from now, so drafts made under older rules can still be undone.
     if (slots.some(s => !D.A[s.aid])) throw new HttpError(400, 'มีรายการสอนที่ไม่รู้จัก');
     if (core.conflicts(slots)) throw new HttpError(409, 'ย้อนกลับไม่ได้: ตารางจะมีคาบชนกัน');
@@ -172,11 +208,17 @@ const H = {
       const touched = [...slots.filter(s => { const c = cur.get(s.id); return !c || c.day !== s.day || c.start !== s.start || c.len !== s.len || c.room !== s.room }), ...v.slots.filter(c => !slots.some(s => s.id === c.id))];
       if (touched.some(s => !D.A[s.aid].teachers.includes(me.pid))) throw new HttpError(403, 'ย้อนกลับได้เฉพาะคาบที่คุณสอน');
     }
-    await tx(async t => { await replaceSlots(t, D, v.id, slots); await t.scheduleVersion.update({ where: { id: v.id }, data: { fitnessScore: core.fitness(slots) } }) });
+    const changed = [...new Set([...slots, ...v.slots].map(s => s.aid))].filter(aid => {
+      const tot = list => list.filter(s => s.aid === aid).reduce((n, s) => n + s.len, 0); return tot(slots) !== tot(v.slots) });
+    if (changed.some(aid => !slots.some(s => s.aid === aid))) throw new HttpError(400, 'วิชาต้องเหลืออย่างน้อย 1 คาบ');
+    await tx(async t => {
+      await replaceSlots(t, D, v.id, slots); await t.scheduleVersion.update({ where: { id: v.id }, data: { fitnessScore: core.fitness(slots) } });
+      for (const aid of changed) await syncAssignment(t, { slots }, aid);
+    });
     await audit(me.name, 'UNDO', v.name);
   },
   async clone(b, me) {
-    const { D, core, v } = await ctx(b.vid);
+    const { D, core, v } = await ctx(b.vid); await roomForDraft(D.term.id);
     const id = 'v-' + randomUUID().slice(0, 8), slots = v.slots.map(s => ({ ...s, id: randomUUID() }));
     await tx(t => createVersion(t, D, { id, name: `ฉบับร่าง (โคลนจาก ${v.name})`.slice(0, 180), status: 'DRAFT', source: 'CLONE', seed: v.seed, fitness: core.fitness(slots), unplaced: v.unplaced, createdBy: me.name }, slots));
     await audit(me.name, 'CLONE', `${v.id} → ${id}`);
@@ -189,6 +231,9 @@ const H = {
     await tx(async t => {
       await t.scheduleVersion.updateMany({ where: { termId: D.term.id, status: 'PUBLISHED' }, data: { status: 'ARCHIVED' } });
       await t.scheduleVersion.update({ where: { id: v.id }, data: { status: 'PUBLISHED', publishedAt: new Date() } });
+      // Keep only the newest archived versions for rollback; older ones go.
+      const old = await t.scheduleVersion.findMany({ where: { termId: D.term.id, status: 'ARCHIVED' }, orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }], skip: KEEP_ARCHIVED, select: { id: true } });
+      for (const o of old) await dropVersion(t, o.id, 'ฉบับตารางเก่าถูกลบอัตโนมัติ');
       // shortcut: in-app notification only; email and LINE OA delivery come with the worker.
       await t.notification.create({ data: { recipientType: 'ALL', recipientId: '*', channel: 'IN_APP', message: `เผยแพร่ตาราง: ${v.name}` } });
     });
@@ -196,9 +241,11 @@ const H = {
   },
   async runScheduler(b, me) {
     const D = await loadMaster(), core = coreFor(D), seed = Math.max(1, Math.min(99999, int(b.seed)));
+    await roomForDraft(D.term.id);
     const [draft] = (await loadVersions({ status: 'DRAFT' })).slice(-1);
     const t0 = Date.now(), r = core.solve(seed, draft ? draft.slots.filter(s => s.locked) : [], randomUUID), ms = Date.now() - t0;
     if (core.conflicts(r.slots)) throw new HttpError(500, 'ตัวจัดตารางให้ผลที่ชนกัน');
+    if (r.slots.some(s => crossesLunch(s.start, s.len))) throw new HttpError(500, 'ตัวจัดตารางให้ผลที่คร่อมพักกลางวัน');
     const id = 'v-' + randomUUID().slice(0, 8);
     await tx(t => createVersion(t, D, { id, name: `ฉบับร่างจากตัวจัดตาราง (seed ${seed})`, status: 'DRAFT', source: 'SOLVER', seed, fitness: core.fitness(r.slots), unplaced: r.unplaced, createdBy: me.name }, r.slots));
     await audit(me.name, 'RUN_SCHEDULER', `seed ${seed} → ${id}, ${core.placed(r)}/${core.total()} คาบ, ${ms} ms`);

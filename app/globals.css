@@ -266,3 +266,4 @@ main.enter{animation:enter .22s ease-out}
 .impbar .wrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-block:8px;font-size:15px}
 .impbar span{flex:1 1 260px}
 .badge.bad{background:var(--bad);color:#fff}
+.stepper{display:flex;align-items:center;gap:12px}.stepper .btn{width:44px;height:40px;font-size:22px;padding:0}.stepper b{min-width:72px;text-align:center;font-size:17px}
