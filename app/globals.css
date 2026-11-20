@@ -243,3 +243,14 @@ td .okk{color:var(--ok);font-weight:700}
 .foot{border-top:1px solid var(--line);background:var(--surface);font-size:14px}
 .foot-in{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:18px}
 @media (max-width:560px){.logo{width:50px;height:50px}.b2{font-size:13.5px}.band-r{width:100%}}
+
+/* motion: loading bar, page entry, smooth state changes */
+#bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:80;pointer-events:none;opacity:0;transition:opacity .2s;background:linear-gradient(90deg,transparent,var(--gold),transparent) no-repeat;background-size:40% 100%}
+body.loading #bar{opacity:1;animation:bar 1s linear infinite}
+body.loading{cursor:progress}
+@keyframes bar{from{background-position:-40% 0}to{background-position:140% 0}}
+main.enter{animation:enter .22s ease-out}
+@keyframes enter{from{opacity:0;transform:translateY(6px)}}
+.slot,.btn,.chip,.tab,.cell,.seg button,.pcard,.icard{transition:background-color .15s,border-color .15s,box-shadow .15s,opacity .15s,color .15s}
+.btn:active,.chip:active,.slot:active{transform:translateY(1px)}
+@media (prefers-reduced-motion:reduce){body.loading #bar{animation:none;background:var(--gold)}main.enter{animation:none}.btn:active,.chip:active,.slot:active{transform:none}}

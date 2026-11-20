@@ -30,8 +30,8 @@ export async function POST(req) {
 
 /* ---------- helpers ---------- */
 async function ctx(vid) {
-  const D = await loadMaster(), core = coreFor(D), v = vid ? await loadVersion(vid) : null;
-  return { D, core, v };
+  const [D, v] = await Promise.all([loadMaster(), vid ? loadVersion(vid) : null]);
+  return { D, core: coreFor(D), v };
 }
 function slotIn(v, id) { const s = v.slots.find(x => x.id === String(id)); if (!s) throw new HttpError(404, 'ไม่พบคาบนี้'); return s }
 // Admin edits any slot in a draft; a teacher edits only their own slots in a draft.
