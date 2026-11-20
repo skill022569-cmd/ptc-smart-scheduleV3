@@ -9,7 +9,7 @@ import { importSpec, validateImport, pp, thDay } from '../../../lib/core.js';
 export const maxDuration = 60;
 
 const PUBLIC = new Set(['issueCreate', 'dsrCreate', 'consent']);
-const ADMIN_ONLY = new Set(['pin', 'clone', 'publish', 'runScheduler', 'crDecide', 'issueMove', 'dsrDone', 'lockToggle', 'import']);
+const ADMIN_ONLY = new Set(['setPassword', 'pin', 'clone', 'publish', 'runScheduler', 'crDecide', 'issueMove', 'dsrDone', 'lockToggle', 'import']);
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const int = v => { const n = Number(v); if (!Number.isInteger(n)) throw new HttpError(400, 'ข้อมูลไม่ถูกต้อง'); return n };
 
@@ -49,8 +49,21 @@ const refit = (tx, core, v) => tx.scheduleVersion.update({ where: { id: v.id }, 
 const tx = fn => prisma.$transaction(fn, { timeout: 30000 });
 
 /* ---------- handlers ---------- */
+const H0 = {
+  // Admin sets a new password for a staff account; also clears any lockout.
+  async setPassword(b, me) {
+    const pid = str(b.pid, 40), pw = String(b.password || '');
+    if (pw.length < 8 || pw.length > 200) throw new HttpError(400, 'รหัสผ่านต้องยาว 8 ตัวอักษรขึ้นไป');
+    const u = await prisma.user.findFirst({ where: { personnelId: pid } });
+    if (!u) throw new HttpError(404, 'บุคลากรนี้ยังไม่มีบัญชีผู้ใช้');
+    if (u.role === 'ADMIN') throw new HttpError(403, 'เปลี่ยนรหัสบัญชีผู้ดูแลระบบจากหน้านี้ไม่ได้');
+    await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(pw, 10), mustChangePassword: !!b.force, failedLogins: 0, lockedUntil: null } });
+    await audit(me.name, 'PASSWORD_RESET', `${u.username}${b.force ? ' (ต้องเปลี่ยนเมื่อเข้าครั้งถัดไป)' : ''}`);
+  },
+};
 const PHOTO = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const H = {
+  ...H0,
   // Own profile for everyone with a staff record; any profile for admins (who may also change name, position, department).
   async profileSave(b, me) {
     const pid = str(b.pid, 40), admin = me.role === 'ADMIN';
