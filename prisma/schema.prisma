@@ -1,0 +1,335 @@
+// TiDB Cloud (MySQL compatible). relationMode = "prisma": integrity is enforced in app code, not by foreign keys.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+model AcademicTerm {
+  id           Int       @id @default(autoincrement())
+  academicYear Int
+  term         Int
+  startDate    DateTime?
+  endDate      DateTime?
+  isCurrent    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("academic_terms")
+}
+
+model User {
+  id                 Int       @id @default(autoincrement())
+  username           String    @unique @db.VarChar(64)
+  passwordHash       String
+  role               String    @db.VarChar(16) // ADMIN | TEACHER
+  personnelId        String?   @db.VarChar(40)
+  isActive           Boolean   @default(true)
+  failedLogins       Int       @default(0)
+  lockedUntil        DateTime?
+  mustChangePassword Boolean   @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Department {
+  code            String   @id @db.VarChar(8)
+  nameTh          String
+  nameEn          String
+  headPersonnelId String?  @db.VarChar(40)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("departments")
+}
+
+model Personnel {
+  id               String   @id @default(cuid()) @db.VarChar(40)
+  empCode          String   @unique @db.VarChar(16)
+  fullName         String
+  position         String
+  departmentCode   String   @db.VarChar(8)
+  expertise        String   @default("")
+  education        String   @default("")
+  phone            String   @default("") @db.VarChar(20)
+  isPublicProfile  Boolean  @default(false)
+  maxHoursPerWeek  Int      @default(20)
+  maxPeriodsPerDay Int      @default(6)
+  maxConsecutive   Int      @default(4)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([departmentCode])
+  @@map("personnel")
+}
+
+model TeacherUnavailability {
+  id          Int      @id @default(autoincrement())
+  personnelId String   @db.VarChar(40)
+  termId      Int
+  dayOfWeek   Int
+  periodNo    Int
+  reason      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([personnelId])
+  @@map("teacher_unavailability")
+}
+
+model Subject {
+  code              String   @id @db.VarChar(16)
+  name              String
+  credits           String   @db.VarChar(16) // ท-ป-น
+  periodsPerWeek    Int
+  requiredRoomType  String   @db.VarChar(16)
+  preferConsecutive Boolean  @default(false)
+  departmentCode    String   @db.VarChar(8)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("subjects")
+}
+
+model Room {
+  code      String   @id @db.VarChar(16)
+  name      String
+  building  String
+  capacity  Int
+  roomType  String   @db.VarChar(16)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rooms")
+}
+
+model RoomUnavailability {
+  id        Int      @id @default(autoincrement())
+  roomCode  String   @db.VarChar(16)
+  termId    Int
+  dayOfWeek Int
+  periodNo  Int
+  reason    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomCode])
+  @@map("room_unavailability")
+}
+
+model StudentGroup {
+  code           String   @id @db.VarChar(16)
+  departmentCode String   @db.VarChar(8)
+  level          String   @db.VarChar(8)
+  yearNo         Int
+  studentCount   Int
+  advisorId      String?  @db.VarChar(40)
+  nameTh         String
+  nameEn         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("student_groups")
+}
+
+// No national ID, birth date or address (PDPA: not needed for timetabling).
+model Student {
+  id          Int      @id @default(autoincrement())
+  studentCode String   @unique @db.VarChar(16)
+  fullName    String
+  groupCode   String   @db.VarChar(16)
+  status      String   @default("ACTIVE") @db.VarChar(16)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([groupCode])
+  @@map("students")
+}
+
+model LockedActivity {
+  id         String   @id @db.VarChar(16)
+  termId     Int
+  nameTh     String
+  nameEn     String
+  dayOfWeek  Int
+  fromPeriod Int
+  length     Int
+  appliesTo  String   @db.VarChar(16) // ALL | CERT_Y1
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("locked_activities")
+}
+
+// What has to be taught (input). Placement lives in schedule_slots.
+model TeachingAssignment {
+  id              String   @id @db.VarChar(40)
+  termId          Int
+  subjectCode     String   @db.VarChar(16)
+  requiredPeriods Int
+  blockPattern    Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("teaching_assignments")
+}
+
+model AssignmentTeacher {
+  assignmentId String @db.VarChar(40)
+  personnelId  String @db.VarChar(40)
+
+  @@id([assignmentId, personnelId])
+  @@map("assignment_teachers")
+}
+
+model AssignmentGroup {
+  assignmentId String @db.VarChar(40)
+  groupCode    String @db.VarChar(16)
+
+  @@id([assignmentId, groupCode])
+  @@map("assignment_groups")
+}
+
+model ScheduleVersion {
+  id           String    @id @db.VarChar(40)
+  termId       Int
+  name         String
+  status       String    @db.VarChar(16) // DRAFT | PUBLISHED | ARCHIVED
+  source       String    @db.VarChar(16) // SOLVER | MANUAL | CLONE
+  seed         Int?
+  fitnessScore Int       @default(0)
+  unplaced     Json
+  publishedAt  DateTime?
+  createdBy    String    @default("")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([termId, status])
+  @@map("schedule_versions")
+}
+
+model ScheduleSlot {
+  id           String   @id @db.VarChar(40)
+  versionId    String   @db.VarChar(40)
+  assignmentId String   @db.VarChar(40)
+  dayOfWeek    Int
+  startPeriod  Int
+  length       Int
+  roomCode     String   @db.VarChar(16)
+  isLocked     Boolean  @default(false)
+  splitIndex   Int      @default(0)
+  rowVersion   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([versionId])
+  @@map("schedule_slots")
+}
+
+// One row per period per resource: the unique index is the last line of defence against double-booking.
+model SlotOccupancy {
+  id           Int    @id @default(autoincrement())
+  versionId    String @db.VarChar(40)
+  dayOfWeek    Int
+  periodNo     Int
+  resourceType String @db.VarChar(8) // TEACHER | ROOM | GROUP
+  resourceId   String @db.VarChar(40)
+  slotId       String @db.VarChar(40)
+
+  @@unique([versionId, dayOfWeek, periodNo, resourceType, resourceId])
+  @@index([slotId])
+  @@map("slot_occupancy")
+}
+
+model ChangeRequest {
+  id          Int      @id @default(autoincrement())
+  versionId   String   @db.VarChar(40)
+  slotId      String   @db.VarChar(40)
+  requestedBy String   @db.VarChar(40)
+  fromDay     Int
+  fromStart   Int
+  toDay       Int
+  toStart     Int
+  note        String   @default("") @db.VarChar(300)
+  status      String   @default("PENDING") @db.VarChar(16)
+  error       String?  @db.Text
+  reviewedBy  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("change_requests")
+}
+
+model Notification {
+  id            Int       @id @default(autoincrement())
+  recipientType String    @db.VarChar(16)
+  recipientId   String    @db.VarChar(40)
+  channel       String    @db.VarChar(16)
+  message       String    @db.Text
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("notifications")
+}
+
+model IssueReport {
+  id            Int      @id @default(autoincrement())
+  relatedSlotId String?  @db.VarChar(40)
+  description   String   @db.VarChar(500)
+  contact       String   @default("") @db.VarChar(80)
+  status        String   @default("OPEN") @db.VarChar(16)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("issue_reports")
+}
+
+model ConsentRecord {
+  id            Int       @id @default(autoincrement())
+  subjectType   String    @db.VarChar(16)
+  subjectId     String    @db.VarChar(64)
+  purpose       String    @db.VarChar(32)
+  policyVersion String    @db.VarChar(8)
+  granted       Boolean
+  grantedAt     DateTime  @default(now())
+  withdrawnAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("consent_records")
+}
+
+model DataSubjectRequest {
+  id        Int      @id @default(autoincrement())
+  requester String   @db.VarChar(80)
+  type      String   @db.VarChar(8) // VIEW | EDIT | DEL
+  detail    String   @db.VarChar(500)
+  status    String   @default("PENDING") @db.VarChar(16)
+  handledBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("data_subject_requests")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actor     String
+  action    String   @db.VarChar(32)
+  detail    String   @db.Text
+  ip        String   @default("") @db.VarChar(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
