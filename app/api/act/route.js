@@ -22,6 +22,9 @@ export async function POST(req) {
     if (!PUBLIC.has(type)) {
       if (!me) throw new HttpError(401, 'กรุณาเข้าสู่ระบบ');
       if (me.mc) throw new HttpError(403, 'กรุณาเปลี่ยนรหัสผ่านก่อนใช้งาน');
+      if (me.imp) throw new HttpError(403, 'โหมดดูในมุมของผู้ใช้อื่นแก้ไขข้อมูลไม่ได้ กรุณากลับเป็นผู้ดูแลระบบก่อน');
+      if (me.role === 'PUBLIC') throw new HttpError(401, 'กรุณาเข้าสู่ระบบ');
+      if (me.role === 'EXEC' && type !== 'profileSave') throw new HttpError(403, 'ผู้บริหารดูข้อมูลได้อย่างเดียว');
       if (ADMIN_ONLY.has(type) && me.role !== 'ADMIN') throw new HttpError(403, 'เฉพาะผู้ดูแลระบบ');
     } else rateLimit('public-write', 20, 60 * 60e3);
     return json(await H[type](b, me) || { ok: true });
@@ -46,7 +49,38 @@ const refit = (tx, core, v) => tx.scheduleVersion.update({ where: { id: v.id }, 
 const tx = fn => prisma.$transaction(fn, { timeout: 30000 });
 
 /* ---------- handlers ---------- */
+const PHOTO = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const H = {
+  // Own profile for everyone with a staff record; any profile for admins (who may also change name, position, department).
+  async profileSave(b, me) {
+    const pid = str(b.pid, 40), admin = me.role === 'ADMIN';
+    if (!admin && me.pid !== pid) throw new HttpError(403, 'แก้ได้เฉพาะข้อมูลของตนเอง');
+    const p = await prisma.personnel.findUnique({ where: { id: pid } });
+    if (!p) throw new HttpError(404, 'ไม่พบบุคลากร');
+    const email = str(b.email, 120), phone = str(b.phone, 20);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'รูปแบบอีเมลไม่ถูกต้อง');
+    if (phone && !/^[0-9+\-\s]{9,20}$/.test(phone)) throw new HttpError(400, 'เบอร์โทรต้องเป็นตัวเลข 9–20 หลัก');
+    const data = { expertise: str(b.exp, 190), education: str(b.edu, 190), phone, email, lineId: str(b.line, 60), workHistory: str(b.hist, 3000) || null, isPublicProfile: !!b.consent };
+    if (admin) {
+      const name = str(b.name, 120), pos = str(b.pos, 120), dept = str(b.dept, 8);
+      if (!name || !pos) throw new HttpError(400, 'กรอกชื่อและตำแหน่งให้ครบ');
+      if (!await prisma.department.findUnique({ where: { code: dept } })) throw new HttpError(400, 'ไม่พบแผนกนี้');
+      Object.assign(data, { fullName: name, position: pos, departmentCode: dept });
+    }
+    let photo; // undefined = unchanged, '' = remove, otherwise new data URL
+    if (typeof b.photo === 'string') {
+      photo = b.photo;
+      if (photo && (photo.length > 400000 || !PHOTO.test(photo))) throw new HttpError(400, 'รูปไม่ถูกต้องหรือใหญ่เกินไป');
+      data.photoVersion = { increment: 1 };
+    }
+    await tx(async t => {
+      if (photo === '') await t.personnelPhoto.deleteMany({ where: { personnelId: pid } });
+      else if (photo) await t.personnelPhoto.upsert({ where: { personnelId: pid }, update: { data: photo }, create: { personnelId: pid, data: photo } });
+      await t.personnel.update({ where: { id: pid }, data });
+      if (p.isPublicProfile !== data.isPublicProfile) await t.consentRecord.create({ data: { subjectType: 'PERSONNEL', subjectId: pid, purpose: 'DIRECTORY_PROFILE', policyVersion: '1.0', granted: data.isPublicProfile, withdrawnAt: data.isPublicProfile ? null : new Date() } });
+    });
+    await audit(me.name, 'PROFILE_UPDATE', `${p.empCode} ${data.fullName || p.fullName}${photo !== undefined ? (photo ? ' (เปลี่ยนรูป)' : ' (ลบรูป)') : ''}${p.isPublicProfile !== data.isPublicProfile ? (data.isPublicProfile ? ' ยินยอมเผยแพร่' : ' ถอนความยินยอม') : ''}`);
+  },
   async move(b, me) {
     const { D, core, v } = await ctx(b.vid), s = slotIn(v, b.sid);
     mayEdit(me, D, v, s);

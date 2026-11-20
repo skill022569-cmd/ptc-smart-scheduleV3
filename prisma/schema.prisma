@@ -26,7 +26,7 @@ model User {
   id                 Int       @id @default(autoincrement())
   username           String    @unique @db.VarChar(64)
   passwordHash       String
-  role               String    @db.VarChar(16) // ADMIN | TEACHER
+  role               String    @db.VarChar(16) // ADMIN | EXEC (read-only executives) | TEACHER
   personnelId        String?   @db.VarChar(40)
   isActive           Boolean   @default(true)
   failedLogins       Int       @default(0)
@@ -63,11 +63,25 @@ model Personnel {
   maxHoursPerWeek  Int      @default(20)
   maxPeriodsPerDay Int      @default(6)
   maxConsecutive   Int      @default(4)
+  email            String   @default("") @db.VarChar(120)
+  lineId           String   @default("") @db.VarChar(60)
+  workHistory      String?  @db.Text
+  photoVersion     Int      @default(0) // bumps on every photo change; the photo itself lives in personnel_photos
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([departmentCode])
   @@map("personnel")
+}
+
+// Kept apart from personnel so loading staff lists never drags image data along.
+model PersonnelPhoto {
+  personnelId String   @id @db.VarChar(40)
+  data        String   @db.MediumText // data:image/jpeg;base64,... (resized in the browser to 320px)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("personnel_photos")
 }
 
 model TeacherUnavailability {

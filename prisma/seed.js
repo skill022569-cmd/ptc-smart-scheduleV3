@@ -54,8 +54,38 @@ const VOC = {
 const LOCKS = [['HR', 'โฮมรูม / พบครูที่ปรึกษา', 'Homeroom', 1, 1, 1, 'ALL'], ['VSO', 'กิจกรรมองค์การวิชาชีพ (อวช.)', 'Vocational organisation activity', 3, 6, 2, 'ALL'], ['SCOUT', 'ลูกเสือวิสามัญ / รด.', 'Scouts / Territorial Defence', 4, 6, 2, 'CERT_Y1']];
 const FN = ['ธนวัฒน์', 'ศุภชัย', 'กิตติพงษ์', 'อนันดา', 'พรรณิภา', 'สุภาวดี', 'ชยพล', 'ปวีณา', 'ณัฐวุฒิ', 'กมลชนก', 'วีรภัทร', 'ธิดารัตน์'], LN = ['ศรีสุข', 'บุญมา', 'แก้วมณี', 'ทองดี', 'พลศักดิ์', 'จันทร์แก้ว', 'สมบูรณ์', 'ภูมิสุข'];
 
+const EXECS = [
+  ['x1', 'EX-001', 'นายวิทยา ศรีประเสริฐ', 'ผู้อำนวยการวิทยาลัยการอาชีพโพนทอง', 'การบริหารสถานศึกษา, ความร่วมมือกับสถานประกอบการ', 'ค.ด. การบริหารการศึกษา', '0810001001'],
+  ['x2', 'EX-002', 'นางสาวนงลักษณ์ ทองสุข', 'รองผู้อำนวยการฝ่ายวิชาการ', 'หลักสูตรอาชีวศึกษา, การจัดตารางสอน', 'กศ.ม. การบริหารการศึกษา', '0810001002'],
+  ['x3', 'EX-003', 'นายสมศักดิ์ พรมมา', 'รองผู้อำนวยการฝ่ายบริหารทรัพยากร', 'งบประมาณ, พัสดุ, บุคลากร', 'บธ.ม. การจัดการ', '0810001003'],
+  ['x4', 'EX-004', 'นางพรทิพย์ แสงอรุณ', 'รองผู้อำนวยการฝ่ายแผนงานและความร่วมมือ', 'แผนพัฒนาสถานศึกษา, ระบบทวิภาคี', 'ศษ.ม. การบริหารการศึกษา', '0810001004'],
+  ['x5', 'EX-005', 'นายชัยวัฒน์ บุญเรือง', 'รองผู้อำนวยการฝ่ายพัฒนากิจการนักเรียนนักศึกษา', 'กิจกรรมนักเรียน, องค์การวิชาชีพ (อวช.)', 'ค.ม. การบริหารการศึกษา', '0810001005']];
+
+// Idempotent: also runs on databases seeded before executives existed.
+async function ensureExecutives() {
+  await prisma.department.upsert({ where: { code: 'EXE' }, update: {}, create: { code: 'EXE', nameTh: 'ผู้บริหาร', nameEn: 'Executives' } });
+  const pw = process.env.INITIAL_PASSWORD, hash = pw && pw.length >= 8 ? await bcrypt.hash(pw, 10) : null;
+  let added = 0;
+  for (const [id, emp, name, pos, exp, edu, phone] of EXECS) {
+    if (!await prisma.personnel.findUnique({ where: { empCode: emp } })) {
+      await prisma.personnel.create({ data: { id, empCode: emp, fullName: name, position: pos, departmentCode: 'EXE', expertise: exp, education: edu, phone, isPublicProfile: true, maxHoursPerWeek: 0 } });
+      added++;
+    }
+    const p = await prisma.personnel.findUnique({ where: { empCode: emp } });
+    if (!await prisma.user.findUnique({ where: { username: emp } })) {
+      if (hash) await prisma.user.create({ data: { username: emp, passwordHash: hash, role: 'EXEC', personnelId: p.id } });
+      else console.warn(`seed: INITIAL_PASSWORD not set, no login created for ${emp}`);
+    }
+  }
+  if (added) console.log(`seed: added ${added} executives`);
+}
+
 async function main() {
-  if (await prisma.academicTerm.count()) { console.log('seed: data already present, skipping'); return }
+  if (!await prisma.academicTerm.count()) await seedAll(); else console.log('seed: demo data already present');
+  await ensureExecutives();
+}
+
+async function seedAll() {
   const pw = process.env.INITIAL_PASSWORD;
   if (!pw || pw.length < 8) throw new Error('Set INITIAL_PASSWORD (8+ characters) before the first deploy; every account must change it at first sign-in.');
 

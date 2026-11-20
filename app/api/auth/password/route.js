@@ -5,6 +5,7 @@ export async function POST(req) {
   try {
     const me = await getSession();
     if (!me) throw new HttpError(401, 'กรุณาเข้าสู่ระบบ');
+    if (me.imp) throw new HttpError(403, 'โหมดดูในมุมของผู้ใช้อื่นเปลี่ยนรหัสผ่านไม่ได้');
     const b = await req.json().catch(() => ({}));
     const cur = String(b.current || ''), next = String(b.next || '');
     if (next.length < 8 || next.length > 200) throw new HttpError(400, 'รหัสผ่านใหม่ต้องยาว 8 ตัวอักษรขึ้นไป');

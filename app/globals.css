@@ -254,3 +254,14 @@ main.enter{animation:enter .22s ease-out}
 .slot,.btn,.chip,.tab,.cell,.seg button,.pcard,.icard{transition:background-color .15s,border-color .15s,box-shadow .15s,opacity .15s,color .15s}
 .btn:active,.chip:active,.slot:active{transform:translateY(1px)}
 @media (prefers-reduced-motion:reduce){body.loading #bar{animation:none;background:var(--gold)}main.enter{animation:none}.btn:active,.chip:active,.slot:active{transform:none}}
+
+/* profiles + view-as */
+.av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.av{overflow:hidden;flex:none}
+.av.lg{width:112px;height:112px;font-size:44px}
+.profhead{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.pcard.exe{border-color:var(--gold);background:linear-gradient(180deg,var(--gold-soft),var(--surface) 70%)}
+.pcard .mrow{margin-top:8px;align-items:center}
+.impbar{background:var(--gold-soft);border-bottom:2px solid var(--gold);color:var(--fg)}
+.impbar .wrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-block:8px;font-size:15px}
+.impbar span{flex:1 1 260px}
